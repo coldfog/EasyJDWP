@@ -1,3 +1,4 @@
+import asyncio
 import socket
 import struct
 import subprocess
@@ -26,18 +27,23 @@ class JDWP:
         self.host = ""
         self.platform = platform
         self.id = 1
+        self.fieldIDSize = -1
+        self.methodIDSize = -1
+        self.objectIDSize = -1
+        self.referenceTypeIDSize = -1
+        self.frameIDSize = -1
 
     def connect(self, host="127.0.0.1", port=8700):
         if self.platform == JDWP.PLATFORM_ANDROID:
-            subprocess.run(['adb.exe', 'shell', 'am', 'set-debug-app',
+            subprocess.run(['adb', 'shell', 'am', 'set-debug-app',
                         '-w', package_name], stdout=subprocess.DEVNULL)
-            subprocess.run(['adb.exe', 'shell', 'monkey', '-p', package_name, '-c',
+            subprocess.run(['adb', 'shell', 'monkey', '-p', package_name, '-c',
                         'android.intent.category.LAUNCHER 1'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             info("Setup %s in debug mode" % package_name)
 
             try:
                 # adb jdwp will not finish by itself
-                subprocess.run('adb jdwp', timeout=1, capture_output=True)
+                subprocess.run(['adb', 'jdwp'], timeout=1, capture_output=True)
             except subprocess.TimeoutExpired as e:
                 jdwp_port = int(e.output)
 
@@ -52,6 +58,8 @@ class JDWP:
         info("Start handshake")
         self._handshake()
         info("Handshake Success")
+
+        self.set_id_size()
 
     def _handshake(self):
         s = socket.socket()
@@ -75,14 +83,17 @@ class JDWP:
         flags = COMM.CMD_FLAG
         cmd, cmd_set = cmd_sig
         pkt_len = len(data) + JDWP.HEADER_SIZE
-        pkt = struct.pack(">IIBBB%ds" % len(data), pkt_len, self.id, flags, cmd_set, cmd, data)
+        pkt_id = self.id
+        pkt = struct.pack(">IIBBB%ds" % len(data), pkt_len, pkt_id, flags, cmd_set, cmd, data)
         self.id += 2
         self.socket.sendall(pkt)
+        return pkt_id
 
-    def _reply_cmd(self):
+    def _reply_cmd(self, pkt_id):
         header = self.socket.recv(JDWP.HEADER_SIZE)
         pkt_len, id, flags, errcode = struct.unpack('>IIBH', header)
         assert flags == COMM.REPLY_FLAG, "Reply Flag is not correct!"
+        assert pkt_id == id, "Reply packet is not for sending"
         data_len = pkt_len - JDWP.HEADER_SIZE
 
         data = b''
@@ -114,14 +125,19 @@ class JDWP:
             data_dict[name] = val
         return data_dict
 
-    def command(self, cmd_name, callback, **kwargs):
+    def command(self, cmd_name, **kwargs):
         cmd = cmd_def[cmd_name]
         data = self._pack_data(cmd['cmd'], kwargs)
-        self._send_cmd(cmd['sig'], data)
+        pack_id = self._send_cmd(cmd['sig'], data)
 
-        reply_data = self._reply_cmd()
+        reply_data = self._reply_cmd(pack_id)
         return self._unpack_data(cmd['reply'], reply_data)
 
+    def set_id_size(self):
+        ret_data = jdwp.command('IDSizes')
+        for k in ret_data:
+            setattr(self, k, ret_data[k])
+        
 
 
 
@@ -138,4 +154,3 @@ if __name__ == "__main__":
 
     jdwp = JDWP()
     jdwp.connect()
-    debug(jdwp.command('IDSizes', lambda x:x))
