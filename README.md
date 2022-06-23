@@ -8,7 +8,7 @@ some backgroud infomation you may want to know:
 
 # What is it?
 
-This is a project inspired by `jdwp-shellifier.py`. It is designed to communicate with `Java Debug Wire Protocol(JDWP)` but in a more pythonic and easier way. 
+This is a project inspired by [jdwp-shellifier.py](https://github.com/IOActive/jdwp-shellifier). It is designed to communicate with `Java Debug Wire Protocol(JDWP)` but in a more pythonic and easier way. 
 
 The primary purpose of this project is shown below:
 
