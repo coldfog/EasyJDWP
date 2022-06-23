@@ -1,6 +1,62 @@
 from re import S
 import struct
 
+
+class TypeTag:
+    CLASS = 1
+    INTERFACE = 2
+    ARRAY = 3
+
+
+class SuspendPolicy:
+    NONE = 0
+    EVENT_THREAD = 1
+    ALL = 2
+
+
+class ModKind:
+    Count = 1
+    Conditional = 2
+    ThreadOnly = 3
+    ClassOnly = 4
+    ClassMatch = 5
+    ClassExclude = 6
+    LocationOnly = 7
+    ExceptionOnly = 8
+    FieldOnly = 9
+    Step = 10
+    InstanceOnly = 11
+    SourceNameMatch = 12
+
+
+class EventCode:
+    SINGLE_STEP = 1
+    BREAKPOINT = 2
+    FRAME_POP = 3
+    EXCEPTION = 4
+    USER_DEFINED = 5
+    THREAD_START = 6
+    THREAD_DEATH = 7
+    THREAD_END = 7  # obsolete - was used in jvmdi
+    CLASS_PREPARE = 8
+    CLASS_UNLOAD = 9
+    CLASS_LOAD = 10
+    FIELD_ACCESS = 20
+    FIELD_MODIFICATION = 21
+    EXCEPTION_CATCH = 30
+    METHOD_ENTRY = 40
+    METHOD_EXIT = 41
+    METHOD_EXIT_WITH_RETURN_VALUE = 42
+    MONITOR_CONTENDED_ENTER = 43
+    MONITOR_CONTENDED_ENTERED = 44
+    MONITOR_WAIT = 45
+    MONITOR_WAITED = 46
+    VM_START = 90
+    VM_INIT = 90  # obsolete - was used in jvmdi
+    VM_DEATH = 99
+    VM_DISCONNECTED = 100  # Never sent across JDWP
+
+
 cmd_def = {
     # VirtualMachine Command Set (1)
     'Version': {
@@ -23,7 +79,15 @@ cmd_def = {
     'AllClasses': {
         'sig': (3, 1),
         'cmd': (),
-        'reply': (),
+        'reply': (
+            ('int', 'classes'),
+            ('Repeated classes', (
+                ('byte', 'refTypeTag'),
+                ('referenceTypeID', 'typeID'),
+                ('string', 'signature'),
+                ('int', 'status'),
+            )),
+        ),
 
     },
     'AllThreads': {
@@ -49,9 +113,9 @@ cmd_def = {
         'cmd': (),
         'reply': (
             ("int", "fieldIDSize"),
-            ("int", "methodIDSize"), 
-            ("int", "objectIDSize"), 
-            ("int", "referenceTypeIDSize"), 
+            ("int", "methodIDSize"),
+            ("int", "objectIDSize"),
+            ("int", "referenceTypeIDSize"),
             ("int", "frameIDSize")),
     },
     'Suspend': {
@@ -165,8 +229,16 @@ cmd_def = {
     },
     'Methods': {
         'sig': (5, 2),
-        'cmd': (),
-        'reply': (),
+        'cmd': (('referenceTypeID', 'refType'),),
+        'reply': (
+            ('int', 'declared'),
+            ('Repeated declared', (
+                ('methodID', 'methodID'),
+                ('string', 'name'),
+                ('string', 'signature'),
+                ('int', 'modBits'))
+             )
+        ),
 
     },
     'GetValues': {
@@ -513,8 +585,59 @@ cmd_def = {
     # EventRequest Command Set (15)
     'Set': {
         'sig': (1, 15),
-        'cmd': (),
-        'reply': (),
+        'cmd': (
+            ('byte', 'eventKind'),
+            ('byte', 'suspendPolicy'),
+            ('int', 'modifiers'),
+            ('Repeated modifiers', (
+                ('byte', 'modKind'),
+                ('Case modKind', {
+                    ModKind.Count: (
+                        ('int', 'count'),
+                    ),
+                    ModKind.Conditional: (
+                        ('int', 'exprID'),
+                    ),
+                    ModKind.ThreadOnly: (
+                        ('threadID', 'thread'),
+                    ),
+                    ModKind.ClassOnly: (
+                        ('referenceTypeID', 'clazz'),
+                    ),
+                    ModKind.ClassMatch: (
+                        ('string', 'classPattern'),
+                    ),
+                    ModKind.ClassExclude: (
+                        ('string', 'classPattern'),
+                    ),
+                    ModKind.LocationOnly: (
+                        ('location', 'loc'),),
+                    ModKind.ExceptionOnly: (
+                        ('referenceTypeID', 'exceptionOrNull'),
+                        ('boolean', 'caught'),
+                        ('boolean', 'uncaught')
+                    ),
+                    ModKind.FieldOnly: (
+                        ('referenceTypeID', 'declaring'),
+                        ('fieldID', 'fieldID')
+                    ),
+                    ModKind.Step: (
+                        ('threadID', 'thread'),
+                        ('int', 'size'),
+                        ('int', 'depth')
+                    ),
+                    ModKind.InstanceOnly: (
+                        ('objectID', 'instance'),
+                    ),
+                    ModKind.SourceNameMatch: (
+                        ('string', 'sourceNamePattern'),
+                    ),
+                })
+            )),
+        ),
+        'reply': (
+            ('int', 'requestID'),
+        ),
 
     },
     'Clear': {
@@ -579,35 +702,35 @@ fieldIDSize = -1
 
 pack_defs = {
     "short": {  # 2 byte
-        'pack': lambda data: (struct.pack(">h", data[:2]), 2),
+        'pack': lambda data: (struct.pack(">h", data), 2),
         'unpack': lambda data: (struct.unpack(">h", data[:2]), 2),
     },
     "char": {  # 2 byte
-        'pack': lambda data: (struct.pack(">2s", data[:2]), 2),
+        'pack': lambda data: (struct.pack(">2s", data), 2),
         'unpack': lambda data: (struct.unpack(">2s", data[:2]), 2),
     },
     "float": {  # 4 byte
-        'pack': lambda data: (struct.pack(">f", data[:4]), 4),
+        'pack': lambda data: (struct.pack(">f", data), 4),
         'unpack': lambda data: (struct.unpack(">f", data[:4]), 4),
     },
     "double": {  # 8 byte
-        'pack': lambda data: (struct.pack(">d", data[:8]), 8),
+        'pack': lambda data: (struct.pack(">d", data), 8),
         'unpack': lambda data: (struct.unpack(">d", data[:8]), 8),
     },
     "byte": {  # 1 byte
-        'pack': lambda data: (struct.pack(">c", data[:1]), 1),
-        'unpack': lambda data: (struct.unpack(">c", data[:1]), 1),
+        'pack': lambda data: (struct.pack(">B", data), 1),
+        'unpack': lambda data: (struct.unpack(">B", data[:1]), 1),
     },
     "boolean": {  # 1 byte
-        'pack': lambda data: (struct.pack(">?", data[:1]), 1),
+        'pack': lambda data: (struct.pack(">?", data), 1),
         'unpack': lambda data: (struct.unpack(">?", data[:1]), 1),
     },
     "int": {  # 4 bytes
-        'pack': lambda data: (struct.pack(">i", data[:4]), 4),
+        'pack': lambda data: (struct.pack(">i", data), 4),
         'unpack': lambda data: (struct.unpack(">i", data[:4]), 4),
     },
     "long": {  # 8 bytes
-        'pack': lambda data: (struct.pack(">q", data[:8]), 8),
+        'pack': lambda data: (struct.pack(">q", data), 8),
         'unpack': lambda data: (struct.unpack(">q", data[:8]), 8),
     },
 }
@@ -690,8 +813,8 @@ def init_IDSIze(size_dict):
             'unpack': _pack_id_func(frameIDSize, False)
         },
         "location": {  # Target VM specific
-            'pack': lambda data: Exception("Unimplement type"),
-            'unpack': lambda data: Exception("Unimplement type")
+            'pack': _pack_location(True),
+            'unpack': _pack_location(False)
         },
         "string": {  # Variable
             'pack': _pack_string,
@@ -727,7 +850,25 @@ def _pack_id_func(size, is_pack, tagged=False):
     size = size + 1 if tagged else size
 
     if is_pack:
-        return lambda data: (struct.pack(format_pattern, data[:size]), size)
+        if tagged:
+            return lambda data: (struct.pack(format_pattern, *data), size)
+        else:
+            return lambda data: (struct.pack(format_pattern, data), size)
+    else:
+        return lambda data: (struct.unpack(format_pattern, data[:size]), size)
+
+
+def _pack_location(is_pack):
+    global referenceTypeIDSize
+    global methodIDSize
+
+    spec = {4: "I", 8: "Q"}
+    format_pattern = ">B" + \
+        spec[referenceTypeIDSize] + spec[methodIDSize] + 'Q'
+
+    size = 1 + referenceTypeIDSize + methodIDSize + 8
+    if is_pack:
+        return lambda data: (struct.pack(format_pattern, *data), size)
     else:
         return lambda data: (struct.unpack(format_pattern, data[:size]), size)
 
@@ -762,23 +903,23 @@ def _unpack_value(data):
 
 
 tag_def = {
-    b'91': 'arrayID',  # ARRAY	'[' - an array object (objectID size).  
-    b'66': 'byte',  # BYTE	'B' - a byte value (1 byte).  
-    b'67': 'char',  # CHAR	'C' - a character value (2 bytes).  
-    b'76': 'objectID',  # OBJECT	'L' - an object (objectID size).  
-    b'70': 'float',  # FLOAT	'F' - a float value (4 bytes).  
-    b'68': 'double',  # DOUBLE	'D' - a double value (8 bytes).  
-    b'73': 'int',  # INT	'I' - an int value (4 bytes).  
-    b'74': 'long',  # LONG	'J' - a long value (8 bytes).  
-    b'83': 'short',  # SHORT	'S' - a short value (2 bytes).  
-    b'86': 'None',  # VOID	'V' - a void value (no bytes).  
-    b'90': 'boolean',  # BOOLEAN	'Z' - a boolean value (1 byte).  
-    b'115': 'stringID',  # STRING	's' - a String object (objectID size).  
-    b'116': 'threadID',  # THREAD	't' - a Thread object (objectID size).  
+    91: 'arrayID',  # ARRAY	'[' - an array object (objectID size).  
+    66: 'byte',  # BYTE	'B' - a byte value (1 byte).  
+    67: 'char',  # CHAR	'C' - a character value (2 bytes).  
+    76: 'objectID',  # OBJECT	'L' - an object (objectID size).  
+    70: 'float',  # FLOAT	'F' - a float value (4 bytes).  
+    68: 'double',  # DOUBLE	'D' - a double value (8 bytes).  
+    73: 'int',  # INT	'I' - an int value (4 bytes).  
+    74: 'long',  # LONG	'J' - a long value (8 bytes).  
+    83: 'short',  # SHORT	'S' - a short value (2 bytes).  
+    86: 'None',  # VOID	'V' - a void value (no bytes).  
+    90: 'boolean',  # BOOLEAN	'Z' - a boolean value (1 byte).  
+    115: 'stringID',  # STRING	's' - a String object (objectID size).  
+    116: 'threadID',  # THREAD	't' - a Thread object (objectID size).  
     # THREAD_GROUP	'g' - a ThreadGroup object (objectID size).
-    b'103': 'threadGroupID',
+    103: 'threadGroupID',
     # CLASS_LOADER	'l' - a ClassLoader object (objectID size).
-    b'108': 'classLoaderID',
+    108: 'classLoaderID',
     # CLASS_OBJECT	'c' - a class object object (objectID size).
-    b'99': 'classObjectID',
+    99: 'classObjectID',
 }

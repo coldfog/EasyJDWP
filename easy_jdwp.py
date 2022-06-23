@@ -1,10 +1,8 @@
-import asyncio
-from asyncio import protocols
 import socket
 import struct
 import subprocess
 import protocol_defs
-from protocol_defs import cmd_def
+from protocol_defs import EventCode, ModKind, SuspendPolicy, TypeTag, cmd_def
 from protocol_defs import pack_defs
 from protocol_defs import tag_def
 
@@ -19,6 +17,25 @@ class COMM:
     CMD_FLAG = 0x00
     REPLY_FLAG = 0x80
 
+
+class MetaObj:
+    def __getattribute__(self, __name):
+        pass
+
+    def __setattr__(self, __name, __value):
+        pass
+
+
+class MetaClass(MetaObj):
+
+    def __init__(self, jdwp, ref_info):
+        self.class_info = ref_info
+        self._methods = {}
+        self._field = {}
+        self._jdwp = jdwp
+
+    def new(self):
+        pass
 
 
 class JDWP:
@@ -36,13 +53,14 @@ class JDWP:
         self.objectIDSize = -1
         self.referenceTypeIDSize = -1
         self.frameIDSize = -1
+        self._classes = {}
 
     def connect(self, host="127.0.0.1", port=8700):
         if self.platform == JDWP.PLATFORM_ANDROID:
             subprocess.run(['adb', 'shell', 'am', 'set-debug-app',
-                        '-w', package_name], stdout=subprocess.DEVNULL)
+                            '-w', package_name], stdout=subprocess.DEVNULL)
             subprocess.run(['adb', 'shell', 'monkey', '-p', package_name, '-c',
-                        'android.intent.category.LAUNCHER 1'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            'android.intent.category.LAUNCHER 1'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             info("Setup %s in debug mode" % package_name)
 
             try:
@@ -52,8 +70,9 @@ class JDWP:
                 jdwp_port = int(e.output)
 
             subprocess.run(['adb', 'forward', 'tcp:%d' %
-                        port, 'jdwp:%d' % jdwp_port])
-            info("bind jdwp into %s:%d (JDWP port: %d)" % (host, port, jdwp_port))
+                            port, 'jdwp:%d' % jdwp_port])
+            info("bind jdwp into %s:%d (JDWP port: %d)" %
+                 (host, port, jdwp_port))
 
         self.port = port
         self.jdwp_port = jdwp_port
@@ -63,12 +82,55 @@ class JDWP:
         self._handshake()
         info("Handshake Success")
 
-        self.set_id_size()
+        self._set_id_size()
         self.get_version()
+        self._get_all_classes()
+
+    def _path_parse(self, s):
+        i = s.rfind('.')
+        if i == -1:
+            raise Exception('Cannot parse path')
+        return 'L' + s[:i].replace('.', '/') + ';', s[i:][1:]
+
+    def set_break_at_method(self, method_sig):
+        class_name, method_name = self._path_parse(method_sig)
+        cls_info = self.get_class(class_name)
+        method_info = cls_info['methods'][method_name]
+
+        ret = self.command('Set',
+                     eventKind=EventCode.BREAKPOINT,
+                     suspendPolicy=SuspendPolicy.ALL,
+                     modifiers=1,
+                     modifiers_val=[
+                         dict(
+                             modKind=ModKind.LocationOnly,
+                             loc=(
+                                 TypeTag.CLASS, cls_info['typeID'], method_info['methodID'], 0)
+                         )
+                     ]
+                     )
+        info(ret)
+
+    def _get_all_classes(self):
+        ret_data = self.command('AllClasses')
+        for data in ret_data['classes_val']:
+            self._classes[data['signature']] = data
+
+    def get_class(self, name):
+        ref_info = self._classes[name]
+        if 'methods' not in ref_info:
+            ref_info['methods'] = {}
+            method_arr = self.command(
+                'Methods', refType=ref_info['typeID'])['declared_val']
+            for method_info in method_arr:
+                ref_info['methods'][method_info['name']] = method_info
+
+
+        return ref_info
 
     def get_version(self):
-        ret_data = jdwp.command('Version')
-        
+        ret_data = self.command('Version')
+
         for k in ret_data:
             info("%s: %s" % (k, ret_data[k]))
 
@@ -92,7 +154,8 @@ class JDWP:
         cmd, cmd_set = cmd_sig
         pkt_len = len(data) + JDWP.HEADER_SIZE
         pkt_id = self.id
-        pkt = struct.pack(">IIBBB%ds" % len(data), pkt_len, pkt_id, flags, cmd_set, cmd, data)
+        pkt = struct.pack(">IIBBB%ds" % len(data), pkt_len,
+                          pkt_id, flags, cmd_set, cmd, data)
         self.id += 2
         self.socket.sendall(pkt)
         return pkt_id
@@ -100,6 +163,9 @@ class JDWP:
     def _reply_cmd(self, pkt_id):
         header = self.socket.recv(JDWP.HEADER_SIZE)
         pkt_len, id, flags, errcode = struct.unpack('>IIBH', header)
+        # TODO Error handling
+        if errcode != 0:
+            raise Exception('Error! code:%d' %errcode)
         assert flags == COMM.REPLY_FLAG, "Reply Flag is not correct!"
         assert pkt_id == id, "Reply packet is not for sending"
         data_len = pkt_len - JDWP.HEADER_SIZE
@@ -115,32 +181,69 @@ class JDWP:
         out_data = b''
         index = 0
         for val_type, val_name in data_sig:
-            packed_data, size = pack_defs[val_type]['pack'](data_dict[val_name])
-            out_data += packed_data
-            index += size
+            if val_type.startswith('Repeated'):
+                _, len_name = val_type.split()
+                length = data_dict[len_name]
+                for data in data_dict[len_name+'_val']:
+                    packed_data, size = self._pack_data(val_name, data)
+                    out_data += packed_data
+                    index += size
+            elif val_type.startswith('Case'):
+                _, case_name = val_type.split()
+                case = data_dict[case_name]
+                case_data_sig = val_name[case]
+                packed_data, size = self._pack_data(case_data_sig, data_dict)
+                out_data += packed_data
+                index += size
+            else:
+                packed_data, size = pack_defs[val_type]['pack'](
+                    data_dict[val_name])
+                out_data += packed_data
+                index += size
 
-        return out_data
-
+        assert index == len(out_data), "Data Pack Error"
+        return out_data, index
 
     def _unpack_data(self, data_sig, data):
         index = 0
         data_dict = {}
         for val_type, val_name in data_sig:
-            unpacked_data, size = pack_defs[val_type]['unpack'](data[index:])
-            index += size
-            data_dict[val_name] = unpacked_data[0] if len(unpacked_data) == 1 else unpacked_data
-        
-        return data_dict
+            if val_type.startswith('Repeated'):
+                _, len_name = val_type.split()
+                length = data_dict[len_name]
+                tmp_arr = []
+                for i in range(length):
+                    tmp_data_dict, data_consumed = self._unpack_data(
+                        val_name, data[index:])
+                    index += data_consumed
+                    tmp_arr.append(tmp_data_dict)
+                data_dict[len_name+'_val'] = tmp_arr
+            elif val_type.startswith('Case'):
+                _, case_name = val_type.split()
+                case = data_dict[case_name]
+                unpacked_data, size = self._unpack_data(
+                    val_name[case], data[index:])
+                data_dict[case_name+'_val'] = unpacked_data
+                index += size
+            else:
+                unpacked_data, size = pack_defs[val_type]['unpack'](
+                    data[index:])
+                index += size
+                data_dict[val_name] = unpacked_data[0] if len(
+                    unpacked_data) == 1 else unpacked_data
+
+        return data_dict, index
 
     def command(self, cmd_name, **kwargs):
         cmd = cmd_def[cmd_name]
-        data = self._pack_data(cmd['cmd'], kwargs)
+        data, _ = self._pack_data(cmd['cmd'], kwargs)
         pack_id = self._send_cmd(cmd['sig'], data)
 
         reply_data = self._reply_cmd(pack_id)
-        return self._unpack_data(cmd['reply'], reply_data)
+        data, _ = self._unpack_data(cmd['reply'], reply_data)
+        return data
 
-    def set_id_size(self):
+    def _set_id_size(self):
         ret_data = jdwp.command('IDSizes')
         debug('idsize: ' + repr(ret_data))
         for k in ret_data:
@@ -149,7 +252,6 @@ class JDWP:
         protocol_defs.init_IDSIze(ret_data)
         global pack_defs
         pack_defs = protocol_defs.pack_defs
-
 
 
 if __name__ == "__main__":
@@ -165,3 +267,6 @@ if __name__ == "__main__":
 
     jdwp = JDWP()
     jdwp.connect()
+
+    runtime_class = jdwp.get_class("Ljava/lang/Runtime;")
+    jdwp.set_break_at_method("android.app.Activity.onResume")
