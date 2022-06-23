@@ -1,9 +1,17 @@
+from re import S
+import struct
+
 cmd_def = {
     # VirtualMachine Command Set (1)
     'Version': {
         'sig': (1, 1),
         'cmd': (),
-        'reply': (),
+        'reply': (
+            ('string', 'description'),
+            ('int', 'jdwpMajor'),
+            ('int', 'jdwpMinor'),
+            ('string', 'vmVersion'),
+            ('string', 'vmName'),),
 
     },
     'ClassesBySignature': {
@@ -39,7 +47,12 @@ cmd_def = {
     'IDSizes': {
         'sig': (7, 1),
         'cmd': (),
-        'reply': (("fieldIDSize", "I"), ("methodIDSize", "I"), ("objectIDSize", "I"), ("referenceTypeIDSize", "I"), ("frameIDSize", "I")),
+        'reply': (
+            ("int", "fieldIDSize"),
+            ("int", "methodIDSize"), 
+            ("int", "objectIDSize"), 
+            ("int", "referenceTypeIDSize"), 
+            ("int", "frameIDSize")),
     },
     'Suspend': {
         'sig': (8, 1),
@@ -555,4 +568,217 @@ cmd_def = {
         'reply': (),
 
     }
+}
+
+# initialize later, set here for auto-complimant
+objectIDSize = -1
+referenceTypeIDSize = -1
+frameIDSize = -1
+methodIDSize = -1
+fieldIDSize = -1
+
+pack_defs = {
+    "short": {  # 2 byte
+        'pack': lambda data: (struct.pack(">h", data[:2]), 2),
+        'unpack': lambda data: (struct.unpack(">h", data[:2]), 2),
+    },
+    "char": {  # 2 byte
+        'pack': lambda data: (struct.pack(">2s", data[:2]), 2),
+        'unpack': lambda data: (struct.unpack(">2s", data[:2]), 2),
+    },
+    "float": {  # 4 byte
+        'pack': lambda data: (struct.pack(">f", data[:4]), 4),
+        'unpack': lambda data: (struct.unpack(">f", data[:4]), 4),
+    },
+    "double": {  # 8 byte
+        'pack': lambda data: (struct.pack(">d", data[:8]), 8),
+        'unpack': lambda data: (struct.unpack(">d", data[:8]), 8),
+    },
+    "byte": {  # 1 byte
+        'pack': lambda data: (struct.pack(">c", data[:1]), 1),
+        'unpack': lambda data: (struct.unpack(">c", data[:1]), 1),
+    },
+    "boolean": {  # 1 byte
+        'pack': lambda data: (struct.pack(">?", data[:1]), 1),
+        'unpack': lambda data: (struct.unpack(">?", data[:1]), 1),
+    },
+    "int": {  # 4 bytes
+        'pack': lambda data: (struct.pack(">i", data[:4]), 4),
+        'unpack': lambda data: (struct.unpack(">i", data[:4]), 4),
+    },
+    "long": {  # 8 bytes
+        'pack': lambda data: (struct.pack(">q", data[:8]), 8),
+        'unpack': lambda data: (struct.unpack(">q", data[:8]), 8),
+    },
+}
+
+
+def init_IDSIze(size_dict):
+    global objectIDSize
+    global referenceTypeIDSize
+    global frameIDSize
+    global methodIDSize
+    global fieldIDSize
+
+    objectIDSize = size_dict['objectIDSize']
+    referenceTypeIDSize = size_dict['referenceTypeIDSize']
+    frameIDSize = size_dict['frameIDSize']
+    methodIDSize = size_dict['methodIDSize']
+    fieldIDSize = size_dict['fieldIDSize']
+
+    global pack_defs
+    _pack_defs = {
+        **pack_defs,
+        "objectID": {  # Target VM-specific, up to 8 bytes (see below)
+            'pack': _pack_id_func(objectIDSize, True),
+            'unpack': _pack_id_func(objectIDSize, False)
+        },
+        "tagged-objectID": {  # size of objectID plus one byte
+            'pack': _pack_id_func(objectIDSize, True, tagged=True),
+            'unpack': _pack_id_func(objectIDSize, False, tagged=True)
+        },
+        "threadID": {  # same as objectID
+            'pack': _pack_id_func(objectIDSize, True),
+            'unpack': _pack_id_func(objectIDSize, False)
+        },
+        "threadGroupID": {  # same as objectID
+            'pack': _pack_id_func(objectIDSize, True),
+            'unpack': _pack_id_func(objectIDSize, False)
+        },
+        "stringID": {  # same as objectID
+            'pack': _pack_id_func(objectIDSize, True),
+            'unpack': _pack_id_func(objectIDSize, False)
+        },
+        "classLoaderID": {  # same as objectID
+            'pack': _pack_id_func(objectIDSize, True),
+            'unpack': _pack_id_func(objectIDSize, False)
+        },
+        "classObjectID": {  # same as objectID
+            'pack': _pack_id_func(objectIDSize, True),
+            'unpack': _pack_id_func(objectIDSize, False)
+        },
+        "arrayID": {  # same as objectID
+            'pack': _pack_id_func(objectIDSize, True),
+            'unpack': _pack_id_func(objectIDSize, False)
+        },
+        "referenceTypeID": {  # same as objectID
+            'pack': _pack_id_func(referenceTypeIDSize, True),
+            'unpack': _pack_id_func(referenceTypeIDSize, False)
+        },
+        "classID": {  # same as referenceTypeID
+            'pack': _pack_id_func(referenceTypeIDSize, True),
+            'unpack': _pack_id_func(referenceTypeIDSize, False)
+        },
+        "interfaceID": {  # same as referenceTypeID
+            'pack': _pack_id_func(referenceTypeIDSize, True),
+            'unpack': _pack_id_func(referenceTypeIDSize, False)
+        },
+        "arrayTypeID": {  # same as referenceTypeID
+            'pack': _pack_id_func(referenceTypeIDSize, True),
+            'unpack': _pack_id_func(referenceTypeIDSize, False)
+        },
+        "methodID": {  # Target VM-specific, up to 8 bytes (see below)
+            'pack': _pack_id_func(methodIDSize, True),
+            'unpack': _pack_id_func(methodIDSize, False)
+        },
+        "fieldID": {  # Target VM-specific, up to 8 bytes (see below)
+            'pack': _pack_id_func(fieldIDSize, True),
+            'unpack': _pack_id_func(fieldIDSize, False)
+        },
+        "frameID": {  # Target VM-specific, up to 8 bytes (see below)
+            'pack': _pack_id_func(frameIDSize, True),
+            'unpack': _pack_id_func(frameIDSize, False)
+        },
+        "location": {  # Target VM specific
+            'pack': lambda data: Exception("Unimplement type"),
+            'unpack': lambda data: Exception("Unimplement type")
+        },
+        "string": {  # Variable
+            'pack': _pack_string,
+            'unpack': _unpack_string
+        },
+        "value": {  # Variable
+            'pack': _pack_value,
+            'unpack': _unpack_value
+        },
+        "untagged-value": {  # Variable
+            'pack': lambda data: (data, len(data)),
+            'unpack': lambda data: (data, len(data))
+        },
+        "arrayregion": {  # Variable
+            'pack': lambda data: Exception("Unimplement type"),
+            'unpack': lambda data: Exception("Unimplement type")
+        },
+    }
+    pack_defs = _pack_defs
+
+
+def _pack_id_func(size, is_pack, tagged=False):
+    format_pattern = ""
+    tagged_pattern = "c" if tagged else ""
+    if size == 4:
+        format_pattern = "I"
+    elif size == 8:
+        format_pattern = "Q"
+    else:
+        raise Exception("Unsupported id size")
+
+    format_pattern = ">%s%s" % (tagged_pattern, format_pattern)
+    size = size + 1 if tagged else size
+
+    if is_pack:
+        return lambda data: (struct.pack(format_pattern, data[:size]), size)
+    else:
+        return lambda data: (struct.unpack(format_pattern, data[:size]), size)
+
+
+def _pack_string(data):
+    length = len(data)
+    return struct.pack('>I%ss' % length, length, data), 4+length
+
+
+def _unpack_string(data):
+    length = struct.unpack(">I", data[:4])[0]
+    content = struct.unpack(">%ss" % length, data[4:4+length])[0]
+    return content.decode('utf-8'), 4+length
+
+
+def _pack_value(data):
+    tag = tag_def[data[0]]
+    if tag == 'None':
+        return (data[0], 1)
+    else:
+        out_data, size = pack_defs[tag]['pack'](data[1:])
+        return data[0] + out_data, size+1
+
+
+def _unpack_value(data):
+    tag = tag_def[data[0]]
+    if tag == 'None':
+        return (None, 1)
+    else:
+        data, size = pack_defs[tag]['unpack'](data[1:])
+        return data+(tag,), size+1
+
+
+tag_def = {
+    b'91': 'arrayID',  # ARRAY	'[' - an array object (objectID size).  
+    b'66': 'byte',  # BYTE	'B' - a byte value (1 byte).  
+    b'67': 'char',  # CHAR	'C' - a character value (2 bytes).  
+    b'76': 'objectID',  # OBJECT	'L' - an object (objectID size).  
+    b'70': 'float',  # FLOAT	'F' - a float value (4 bytes).  
+    b'68': 'double',  # DOUBLE	'D' - a double value (8 bytes).  
+    b'73': 'int',  # INT	'I' - an int value (4 bytes).  
+    b'74': 'long',  # LONG	'J' - a long value (8 bytes).  
+    b'83': 'short',  # SHORT	'S' - a short value (2 bytes).  
+    b'86': 'None',  # VOID	'V' - a void value (no bytes).  
+    b'90': 'boolean',  # BOOLEAN	'Z' - a boolean value (1 byte).  
+    b'115': 'stringID',  # STRING	's' - a String object (objectID size).  
+    b'116': 'threadID',  # THREAD	't' - a Thread object (objectID size).  
+    # THREAD_GROUP	'g' - a ThreadGroup object (objectID size).
+    b'103': 'threadGroupID',
+    # CLASS_LOADER	'l' - a ClassLoader object (objectID size).
+    b'108': 'classLoaderID',
+    # CLASS_OBJECT	'c' - a class object object (objectID size).
+    b'99': 'classObjectID',
 }

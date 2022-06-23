@@ -1,8 +1,12 @@
 import asyncio
+from asyncio import protocols
 import socket
 import struct
 import subprocess
+import protocol_defs
 from protocol_defs import cmd_def
+from protocol_defs import pack_defs
+from protocol_defs import tag_def
 
 import logging
 from logging import debug, info, warning, error
@@ -60,6 +64,13 @@ class JDWP:
         info("Handshake Success")
 
         self.set_id_size()
+        self.get_version()
+
+    def get_version(self):
+        ret_data = jdwp.command('Version')
+        
+        for k in ret_data:
+            info("%s: %s" % (k, ret_data[k]))
 
     def _handshake(self):
         s = socket.socket()
@@ -75,9 +86,6 @@ class JDWP:
             raise Exception("Failed to handshake")
         else:
             self.socket = s
-
-    def _set_id_size(self):
-        pass
 
     def _send_cmd(self, cmd_sig, data=b''):
         flags = COMM.CMD_FLAG
@@ -104,25 +112,24 @@ class JDWP:
         return data
 
     def _pack_data(self, data_sig, data_dict):
-        pack_format = ">"
-        pack_data = []
-        for val_name, val_type in data_sig:
-            pack_format += val_type
-            pack_data.append(data_dict[val_name])
+        out_data = b''
+        index = 0
+        for val_type, val_name in data_sig:
+            packed_data, size = pack_defs[val_type]['pack'](data_dict[val_name])
+            out_data += packed_data
+            index += size
 
-        return struct.pack(pack_format, *pack_data)
+        return out_data
+
 
     def _unpack_data(self, data_sig, data):
-        pack_format = ">"
-        pack_name = []
-        for val_name, val_type in data_sig:
-            pack_format += val_type
-            pack_name.append(val_name)
-
-        data_arr = struct.unpack(pack_format, data)
+        index = 0
         data_dict = {}
-        for name, val in zip(pack_name, data_arr):
-            data_dict[name] = val
+        for val_type, val_name in data_sig:
+            unpacked_data, size = pack_defs[val_type]['unpack'](data[index:])
+            index += size
+            data_dict[val_name] = unpacked_data[0] if len(unpacked_data) == 1 else unpacked_data
+        
         return data_dict
 
     def command(self, cmd_name, **kwargs):
@@ -135,9 +142,13 @@ class JDWP:
 
     def set_id_size(self):
         ret_data = jdwp.command('IDSizes')
+        debug('idsize: ' + repr(ret_data))
         for k in ret_data:
             setattr(self, k, ret_data[k])
-        
+
+        protocol_defs.init_IDSIze(ret_data)
+        global pack_defs
+        pack_defs = protocol_defs.pack_defs
 
 
 
