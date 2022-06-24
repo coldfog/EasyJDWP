@@ -59,7 +59,7 @@ class EventCode:
 
 cmd_def = {
     # VirtualMachine Command Set (1)
-    'Version': {
+    'VM_Version': {
         'sig': (1, 1),
         'cmd': (),
         'reply': (
@@ -70,13 +70,13 @@ cmd_def = {
             ('string', 'vmName'),),
 
     },
-    'ClassesBySignature': {
+    'VM_ClassesBySignature': {
         'sig': (2, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'AllClasses': {
+    'VM_AllClasses': {
         'sig': (3, 1),
         'cmd': (),
         'reply': (
@@ -90,25 +90,25 @@ cmd_def = {
         ),
 
     },
-    'AllThreads': {
+    'VM_AllThreads': {
         'sig': (4, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'TopLevelThreadGroups': {
+    'VM_TopLevelThreadGroups': {
         'sig': (5, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'Dispose': {
+    'VM_Dispose': {
         'sig': (6, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'IDSizes': {
+    'VM_IDSizes': {
         'sig': (7, 1),
         'cmd': (),
         'reply': (
@@ -118,116 +118,116 @@ cmd_def = {
             ("int", "referenceTypeIDSize"),
             ("int", "frameIDSize")),
     },
-    'Suspend': {
+    'VM_Suspend': {
         'sig': (8, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'Resume': {
+    'VM_Resume': {
         'sig': (9, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'Exit': {
+    'VM_Exit': {
         'sig': (10, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'CreateString': {
+    'VM_CreateString': {
         'sig': (11, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'Capabilities': {
+    'VM_Capabilities': {
         'sig': (12, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'ClassPaths': {
+    'VM_ClassPaths': {
         'sig': (13, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'DisposeObjects': {
+    'VM_DisposeObjects': {
         'sig': (14, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'HoldEvents': {
+    'VM_HoldEvents': {
         'sig': (15, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'ReleaseEvents': {
+    'VM_ReleaseEvents': {
         'sig': (16, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'CapabilitiesNew': {
+    'VM_CapabilitiesNew': {
         'sig': (17, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'RedefineClasses': {
+    'VM_RedefineClasses': {
         'sig': (18, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'SetDefaultStratum': {
+    'VM_SetDefaultStratum': {
         'sig': (19, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'AllClassesWithGeneric': {
+    'VM_AllClassesWithGeneric': {
         'sig': (20, 1),
         'cmd': (),
         'reply': (),
 
     },
-    'InstanceCounts': {
+    'VM_InstanceCounts': {
         'sig': (21, 1),
         'cmd': (),
         'reply': (),
 
     },
     # ReferenceType Command Set (2)
-    'Signature': {
+    'REF_Signature': {
         'sig': (1, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'ClassLoader': {
+    'REF_ClassLoader': {
         'sig': (2, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'Modifiers': {
+    'REF_Modifiers': {
         'sig': (3, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'Fields': {
+    'REF_Fields': {
         'sig': (4, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'Methods': {
+    'REF_Methods': {
         'sig': (5, 2),
         'cmd': (('referenceTypeID', 'refType'),),
         'reply': (
@@ -241,149 +241,149 @@ cmd_def = {
         ),
 
     },
-    'GetValues': {
+    'REF_GetValues': {
         'sig': (6, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'SourceFile': {
+    'REF_SourceFile': {
         'sig': (7, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'NestedTypes': {
+    'REF_NestedTypes': {
         'sig': (8, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'Status': {
+    'REF_Status': {
         'sig': (9, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'Interfaces': {
+    'REF_Interfaces': {
         'sig': (10, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'ClassObject': {
+    'REF_ClassObject': {
         'sig': (11, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'SourceDebugExtension': {
+    'REF_SourceDebugExtension': {
         'sig': (12, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'SignatureWithGeneric': {
+    'REF_SignatureWithGeneric': {
         'sig': (13, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'FieldsWithGeneric': {
+    'REF_FieldsWithGeneric': {
         'sig': (14, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'MethodsWithGeneric': {
+    'REF_MethodsWithGeneric': {
         'sig': (15, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'Instances': {
+    'REF_Instances': {
         'sig': (16, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'ClassFileVersion': {
+    'REF_ClassFileVersion': {
         'sig': (17, 2),
         'cmd': (),
         'reply': (),
 
     },
-    'ConstantPool': {
+    'REF_ConstantPool': {
         'sig': (18, 2),
         'cmd': (),
         'reply': (),
 
     },
     # ClassType Command Set (3)
-    'Superclass': {
+    'CLS_Superclass': {
         'sig': (1, 3),
         'cmd': (),
         'reply': (),
 
     },
-    'SetValues': {
+    'CLS_SetValues': {
         'sig': (2, 3),
         'cmd': (),
         'reply': (),
 
     },
-    'InvokeMethod': {
+    'CLS_InvokeMethod': {
         'sig': (3, 3),
         'cmd': (),
         'reply': (),
 
     },
-    'NewInstance': {
+    'CLS_NewInstance': {
         'sig': (4, 3),
         'cmd': (),
         'reply': (),
 
     },
     # ArrayType Command Set (4)
-    'NewInstance': {
+    'ARR_NewInstance': {
         'sig': (1, 4),
         'cmd': (),
         'reply': (),
 
     },
     # InterfaceType Command Set (5)
-    'InvokeMethod': {
+    'INTF_InvokeMethod': {
         'sig': (1, 5),
         'cmd': (),
         'reply': (),
 
     },
     # Method Command Set (6)
-    'LineTable': {
+    'MTHD_LineTable': {
         'sig': (1, 6),
         'cmd': (),
         'reply': (),
 
     },
-    'VariableTable': {
+    'MTHD_VariableTable': {
         'sig': (2, 6),
         'cmd': (),
         'reply': (),
 
     },
-    'Bytecodes': {
+    'MTHD_Bytecodes': {
         'sig': (3, 6),
         'cmd': (),
         'reply': (),
 
     },
-    'IsObsolete': {
+    'MTHD_IsObsolete': {
         'sig': (4, 6),
         'cmd': (),
         'reply': (),
 
     },
-    'VariableTableWithGeneric': {
+    'MTHD_VariableTableWithGeneric': {
         'sig': (5, 6),
         'cmd': (),
         'reply': (),
@@ -391,199 +391,199 @@ cmd_def = {
     },
     # Field Command Set (8)
     # ObjectReference Command Set (9)
-    'ReferenceType': {
+    'OBJ_ReferenceType': {
         'sig': (1, 9),
         'cmd': (),
         'reply': (),
 
     },
-    'GetValues': {
+    'OBJ_GetValues': {
         'sig': (2, 9),
         'cmd': (),
         'reply': (),
 
     },
-    'SetValues': {
+    'OBJ_SetValues': {
         'sig': (3, 9),
         'cmd': (),
         'reply': (),
 
     },
-    'MonitorInfo': {
+    'OBJ_MonitorInfo': {
         'sig': (5, 9),
         'cmd': (),
         'reply': (),
 
     },
-    'InvokeMethod': {
+    'OBJ_InvokeMethod': {
         'sig': (6, 9),
         'cmd': (),
         'reply': (),
 
     },
-    'DisableCollection': {
+    'OBJ_DisableCollection': {
         'sig': (7, 9),
         'cmd': (),
         'reply': (),
 
     },
-    'EnableCollection': {
+    'OBJ_EnableCollection': {
         'sig': (8, 9),
         'cmd': (),
         'reply': (),
 
     },
-    'IsCollected': {
+    'OBJ_IsCollected': {
         'sig': (9, 9),
         'cmd': (),
         'reply': (),
 
     },
-    'ReferringObjects': {
+    'OBJ_ReferringObjects': {
         'sig': (10, 9),
         'cmd': (),
         'reply': (),
 
     },
     # StringReference Command Set (10)
-    'Value': {
+    'STR_Value': {
         'sig': (1, 10),
         'cmd': (),
         'reply': (),
 
     },
     # ThreadReference Command Set (11)
-    'Name': {
+    'THD_Name': {
         'sig': (1, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'Suspend': {
+    'THD_Suspend': {
         'sig': (2, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'Resume': {
+    'THD_Resume': {
         'sig': (3, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'Status': {
+    'THD_Status': {
         'sig': (4, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'ThreadGroup': {
+    'THD_ThreadGroup': {
         'sig': (5, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'Frames': {
+    'THD_Frames': {
         'sig': (6, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'FrameCount': {
+    'THD_FrameCount': {
         'sig': (7, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'OwnedMonitors': {
+    'THD_OwnedMonitors': {
         'sig': (8, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'CurrentContendedMonitor': {
+    'THD_CurrentContendedMonitor': {
         'sig': (9, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'Stop': {
+    'THD_Stop': {
         'sig': (10, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'Interrupt': {
+    'THD_Interrupt': {
         'sig': (11, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'SuspendCount': {
+    'THD_SuspendCount': {
         'sig': (12, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'OwnedMonitorsStackDepthInfo': {
+    'THD_OwnedMonitorsStackDepthInfo': {
         'sig': (13, 11),
         'cmd': (),
         'reply': (),
 
     },
-    'ForceEarlyReturn': {
+    'THD_ForceEarlyReturn': {
         'sig': (14, 11),
         'cmd': (),
         'reply': (),
 
     },
     # ThreadGroupReference Command Set (12)
-    'Name': {
+    'THDGRP_Name': {
         'sig': (1, 12),
         'cmd': (),
         'reply': (),
 
     },
-    'Parent': {
+    'THDGRP_Parent': {
         'sig': (2, 12),
         'cmd': (),
         'reply': (),
 
     },
-    'Children': {
+    'THDGRP_Children': {
         'sig': (3, 12),
         'cmd': (),
         'reply': (),
 
     },
     # ArrayReference Command Set (13)
-    'Length': {
+    'ARRREF_Length': {
         'sig': (1, 13),
         'cmd': (),
         'reply': (),
 
     },
-    'GetValues': {
+    'ARRREF_GetValues': {
         'sig': (2, 13),
         'cmd': (),
         'reply': (),
 
     },
-    'SetValues': {
+    'ARRREF_SetValues': {
         'sig': (3, 13),
         'cmd': (),
         'reply': (),
 
     },
     # ClassLoaderReference Command Set (14)
-    'VisibleClasses': {
+    'ARRREF_VisibleClasses': {
         'sig': (1, 14),
         'cmd': (),
         'reply': (),
 
     },
     # EventRequest Command Set (15)
-    'Set': {
+    'EVT_Set': {
         'sig': (1, 15),
         'cmd': (
             ('byte', 'eventKind'),
@@ -640,52 +640,52 @@ cmd_def = {
         ),
 
     },
-    'Clear': {
+    'EVT_Clear': {
         'sig': (2, 15),
         'cmd': (),
         'reply': (),
 
     },
-    'ClearAllBreakpoints': {
+    'EVT_ClearAllBreakpoints': {
         'sig': (3, 15),
         'cmd': (),
         'reply': (),
 
     },
     # StackFrame Command Set (16)
-    'GetValues': {
+    'STK_GetValues': {
         'sig': (1, 16),
         'cmd': (),
         'reply': (),
 
     },
-    'SetValues': {
+    'STK_SetValues': {
         'sig': (2, 16),
         'cmd': (),
         'reply': (),
 
     },
-    'ThisObject': {
+    'STK_ThisObject': {
         'sig': (3, 16),
         'cmd': (),
         'reply': (),
 
     },
-    'PopFrames': {
+    'STK_PopFrames': {
         'sig': (4, 16),
         'cmd': (),
         'reply': (),
 
     },
     # ClassObjectReference Command Set (17)
-    'ReflectedType': {
+    'CLSOBJ_ReflectedType': {
         'sig': (1, 17),
         'cmd': (),
         'reply': (),
 
     },
     # Event Command Set (64)
-    'Composite': {
+    'EVTSET_Composite': {
         'sig': (100, 64),
         'cmd': (),
         'reply': (),

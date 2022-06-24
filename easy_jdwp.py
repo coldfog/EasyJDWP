@@ -97,7 +97,7 @@ class JDWP:
         cls_info = self.get_class(class_name)
         method_info = cls_info['methods'][method_name]
 
-        ret = self.command('Set',
+        ret = self.command('EVT_Set',
                      eventKind=EventCode.BREAKPOINT,
                      suspendPolicy=SuspendPolicy.ALL,
                      modifiers=1,
@@ -112,7 +112,7 @@ class JDWP:
         info(ret)
 
     def _get_all_classes(self):
-        ret_data = self.command('AllClasses')
+        ret_data = self.command('VM_AllClasses')
         for data in ret_data['classes_val']:
             self._classes[data['signature']] = data
 
@@ -121,7 +121,7 @@ class JDWP:
         if 'methods' not in ref_info:
             ref_info['methods'] = {}
             method_arr = self.command(
-                'Methods', refType=ref_info['typeID'])['declared_val']
+                'REF_Methods', refType=ref_info['typeID'])['declared_val']
             for method_info in method_arr:
                 ref_info['methods'][method_info['name']] = method_info
 
@@ -129,7 +129,7 @@ class JDWP:
         return ref_info
 
     def get_version(self):
-        ret_data = self.command('Version')
+        ret_data = self.command('VM_Version')
 
         for k in ret_data:
             info("%s: %s" % (k, ret_data[k]))
@@ -244,7 +244,7 @@ class JDWP:
         return data
 
     def _set_id_size(self):
-        ret_data = jdwp.command('IDSizes')
+        ret_data = jdwp.command('VM_IDSizes')
         debug('idsize: ' + repr(ret_data))
         for k in ret_data:
             setattr(self, k, ret_data[k])
