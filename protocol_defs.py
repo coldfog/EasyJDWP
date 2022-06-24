@@ -29,7 +29,7 @@ class ModKind:
     SourceNameMatch = 12
 
 
-class EventCode:
+class EventKind:
     SINGLE_STEP = 1
     BREAKPOINT = 2
     FRAME_POP = 3
@@ -687,7 +687,117 @@ cmd_def = {
     # Event Command Set (64)
     'EVTSET_Composite': {
         'sig': (100, 64),
-        'cmd': (),
+        'cmd': (('byte', 'suspendPolicy'),
+                ('int', 'events'),
+                ('Repeated events', (
+                    ('byte', 'eventKind'),
+                    ('Case eventKind', {
+                        EventKind.VM_START: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                        ),
+                        EventKind.SINGLE_STEP: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('location', 'location'),
+                        ),
+                        EventKind.BREAKPOINT: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('location', 'location'),
+                        ),
+                        EventKind.METHOD_ENTRY: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('location', 'location'),
+                        ),
+                        EventKind.METHOD_EXIT: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('location', 'location'),
+                        ),
+                        EventKind.METHOD_EXIT_WITH_RETURN_VALUE: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('location', 'location'),
+                            ('value', 'value'),
+                        ),
+                        EventKind.MONITOR_CONTENDED_ENTER: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('tagged-objectID', 'object'),
+                            ('location', 'location'),
+                        ),
+                        EventKind.MONITOR_CONTENDED_ENTERED: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('tagged-objectID', 'object'),
+                            ('location', 'location'),
+                        ),
+                        EventKind.MONITOR_WAIT: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('tagged-objectID', 'object'),
+                            ('location', 'location'),
+                            ('long', 'timeout'),
+                        ),
+                        EventKind.MONITOR_WAITED: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('tagged-objectID', 'object'),
+                            ('location', 'location'),
+                            ('boolean', 'timed_out'),
+                        ),
+                        EventKind.EXCEPTION: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('location', 'location'),
+                            ('tagged-objectID', 'exception'),
+                            ('location', 'catchLocation'),
+                        ),
+                        EventKind.THREAD_START: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                        ),
+                        EventKind.THREAD_DEATH: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                        ),
+                        EventKind.CLASS_PREPARE: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('byte', 'refTypeTag'),
+                            ('referenceTypeID', 'typeID'),
+                            ('string', 'signature'),
+                            ('int', 'status'),
+                        ),
+                        EventKind.CLASS_UNLOAD: (
+                            ('int', 'requestID'),
+                            ('string', 'signature'),
+                        ),
+                        EventKind.FIELD_ACCESS: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('location', 'location'),
+                            ('byte', 'refTypeTag'),
+                            ('referenceTypeID', 'typeID'),
+                            ('fieldID', 'fieldID'),
+                            ('tagged-objectID', 'object'),
+                        ),
+                        EventKind.FIELD_MODIFICATION: (
+                            ('int', 'requestID'),
+                            ('threadID', 'thread'),
+                            ('location', 'location'),
+                            ('byte', 'refTypeTag'),
+                            ('referenceTypeID', 'typeID'),
+                            ('fieldID', 'fieldID'),
+                            ('tagged-objectID', 'object'),
+                            ('value', 'valueToBe'),
+                        ),
+                        EventKind.VM_DEATH: (
+                            ('int', 'requestID'),
+                        )
+                    })))),
         'reply': (),
 
     }

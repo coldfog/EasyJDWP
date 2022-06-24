@@ -2,7 +2,7 @@ import socket
 import struct
 import subprocess
 import protocol_defs
-from protocol_defs import EventCode, ModKind, SuspendPolicy, TypeTag, cmd_def
+from protocol_defs import EventKind, ModKind, SuspendPolicy, TypeTag, cmd_def
 from protocol_defs import pack_defs
 from protocol_defs import tag_def
 
@@ -48,6 +48,7 @@ class JDWP:
         self.host = ""
         self.platform = platform
         self.id = 1
+        self.target_id = -1;
         self.fieldIDSize = -1
         self.methodIDSize = -1
         self.objectIDSize = -1
@@ -98,10 +99,10 @@ class JDWP:
         method_info = cls_info['methods'][method_name]
 
         ret = self.command('EVT_Set',
-                     eventKind=EventCode.BREAKPOINT,
+                     eventKind=EventKind.BREAKPOINT,
                      suspendPolicy=SuspendPolicy.ALL,
                      modifiers=1,
-                     modifiers_val=[
+                     modifiers_list=[
                          dict(
                              modKind=ModKind.LocationOnly,
                              loc=(
@@ -109,11 +110,13 @@ class JDWP:
                          )
                      ]
                      )
-        info(ret)
+        requestID = ret['requestID']
+        info('Set break point at %s, requestID: %d'% (method_sig, requestID))
+        return requestID
 
     def _get_all_classes(self):
         ret_data = self.command('VM_AllClasses')
-        for data in ret_data['classes_val']:
+        for data in ret_data['classes_list']:
             self._classes[data['signature']] = data
 
     def get_class(self, name):
@@ -121,7 +124,7 @@ class JDWP:
         if 'methods' not in ref_info:
             ref_info['methods'] = {}
             method_arr = self.command(
-                'REF_Methods', refType=ref_info['typeID'])['declared_val']
+                'REF_Methods', refType=ref_info['typeID'])['declared_list']
             for method_info in method_arr:
                 ref_info['methods'][method_info['name']] = method_info
 
@@ -149,6 +152,29 @@ class JDWP:
         else:
             self.socket = s
 
+    def _recv_cmd(self):
+        header = self.socket.recv(JDWP.HEADER_SIZE)
+        pkt_len, id, flags, cmd_set, cmd = struct.unpack('>IIBBB', header)
+
+        self.target_id = id
+        data_len = pkt_len - JDWP.HEADER_SIZE
+        cmd_sig = (cmd, cmd_set)
+
+        data = b''
+        while len(data) < data_len:
+            left_size = data_len - len(data)
+            data += self.socket.recv(1024 if left_size > 1024 else left_size)
+
+        return data, cmd_sig, id
+
+    def _send_cmd_reply(self, target_id, errorcode, data):
+        flags = COMM.REPLY_FLAG
+        pkt_len = len(data) + JDWP.HEADER_SIZE
+        pkt_id = target_id
+        pkt = struct.pack('>IIBH', pkt_len, pkt_id, flags, errorcode)
+        self.socket.sendall(pkt+data)
+
+
     def _send_cmd(self, cmd_sig, data=b''):
         flags = COMM.CMD_FLAG
         cmd, cmd_set = cmd_sig
@@ -160,7 +186,7 @@ class JDWP:
         self.socket.sendall(pkt)
         return pkt_id
 
-    def _reply_cmd(self, pkt_id):
+    def _recv_cmd_reply(self, pkt_id):
         header = self.socket.recv(JDWP.HEADER_SIZE)
         pkt_len, id, flags, errcode = struct.unpack('>IIBH', header)
         # TODO Error handling
@@ -184,7 +210,7 @@ class JDWP:
             if val_type.startswith('Repeated'):
                 _, len_name = val_type.split()
                 length = data_dict[len_name]
-                for data in data_dict[len_name+'_val']:
+                for data in data_dict[len_name+'_list']:
                     packed_data, size = self._pack_data(val_name, data)
                     out_data += packed_data
                     index += size
@@ -217,7 +243,7 @@ class JDWP:
                         val_name, data[index:])
                     index += data_consumed
                     tmp_arr.append(tmp_data_dict)
-                data_dict[len_name+'_val'] = tmp_arr
+                data_dict[len_name+'_list'] = tmp_arr
             elif val_type.startswith('Case'):
                 _, case_name = val_type.split()
                 case = data_dict[case_name]
@@ -239,7 +265,7 @@ class JDWP:
         data, _ = self._pack_data(cmd['cmd'], kwargs)
         pack_id = self._send_cmd(cmd['sig'], data)
 
-        reply_data = self._reply_cmd(pack_id)
+        reply_data = self._recv_cmd_reply(pack_id)
         data, _ = self._unpack_data(cmd['reply'], reply_data)
         return data
 
@@ -253,6 +279,31 @@ class JDWP:
         global pack_defs
         pack_defs = protocol_defs.pack_defs
 
+    def vm_resume(self):
+        ret = self.command('VM_Resume')
+        info('VM Resumed')
+
+    def wait_for_event(self):
+        cmd = cmd_def['EVTSET_Composite']
+
+        data, sig, cmd_id = self._recv_cmd()
+        assert sig == cmd['sig'], 'Not Event cmd!'
+
+        ret, size = self._unpack_data(cmd['cmd'], data)
+        sus_policy = ret['suspendPolicy']
+        event_num = ret['events']
+        event_list = ret['events_list']
+        events = []
+        for event_attr in event_list:
+            events.append(Event(event_attr))
+        return sus_policy, events
+    
+class Event:
+    def __init__(self, event_attr):
+        self.eventKind = event_attr['eventKind']
+        event_val = event_attr['eventKind_val']
+        for k in event_val:
+            self.__setattr__(k, event_val[k])
 
 if __name__ == "__main__":
     package_name = ""
@@ -269,4 +320,10 @@ if __name__ == "__main__":
     jdwp.connect()
 
     runtime_class = jdwp.get_class("Ljava/lang/Runtime;")
-    jdwp.set_break_at_method("android.app.Activity.onResume")
+    request_id = jdwp.set_break_at_method("android.app.Activity.onResume")
+    jdwp.vm_resume()
+    sus_policy, event_list = jdwp.wait_for_event()
+    for event in event_list:
+        if event.eventKind == EventKind.BREAKPOINT:
+            info(event)
+    info(ret)
