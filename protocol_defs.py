@@ -138,8 +138,12 @@ cmd_def = {
     },
     'VM_CreateString': {
         'sig': (11, 1),
-        'cmd': (),
-        'reply': (),
+        'cmd': (
+            ('string', 'utf'),
+        ),
+        'reply': (
+            ('stringID', 'stringObject'),
+        ),
 
     },
     'VM_Capabilities': {
@@ -642,7 +646,10 @@ cmd_def = {
     },
     'EVT_Clear': {
         'sig': (2, 15),
-        'cmd': (),
+        'cmd': (
+            ('byte', 'eventKind'),
+            ('int', 'requestID')
+        ),
         'reply': (),
 
     },

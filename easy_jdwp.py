@@ -18,7 +18,10 @@ class COMM:
     REPLY_FLAG = 0x80
 
 
-class MetaObj:
+class JDWPIntfShell:
+    pass
+
+class JDWPObjShell:
     def __getattribute__(self, __name):
         pass
 
@@ -26,7 +29,7 @@ class MetaObj:
         pass
 
 
-class MetaClass(MetaObj):
+class JDWPClassShell:
 
     def __init__(self, jdwp, ref_info):
         self.class_info = ref_info
@@ -297,6 +300,14 @@ class JDWP:
         for event_attr in event_list:
             events.append(Event(event_attr))
         return sus_policy, events
+
+    def clear_event(self, event_kind, request_id):
+        ret = self.command('EVT_Clear',
+            eventKind=event_kind,
+            requestID=request_id)
+
+    def create_string(self, string):
+        return self.command('VM_CreateString', utf=string)
     
 class Event:
     def __init__(self, event_attr):
@@ -322,8 +333,13 @@ if __name__ == "__main__":
     runtime_class = jdwp.get_class("Ljava/lang/Runtime;")
     request_id = jdwp.set_break_at_method("android.app.Activity.onResume")
     jdwp.vm_resume()
+
     sus_policy, event_list = jdwp.wait_for_event()
     for event in event_list:
         if event.eventKind == EventKind.BREAKPOINT:
-            info(event)
+            break
+
+    jdwp.clear_event(EventKind.BREAKPOINT, request_id)
+
+
     info(ret)
