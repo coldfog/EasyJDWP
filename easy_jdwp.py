@@ -1,6 +1,9 @@
+from ast import arguments
+from dataclasses import field
 import socket
 import struct
 import subprocess
+from this import s
 import protocol_defs
 from protocol_defs import EventKind, ModKind, SuspendPolicy, TypeTag, cmd_def
 from protocol_defs import pack_defs
@@ -18,30 +21,68 @@ class COMM:
     REPLY_FLAG = 0x80
 
 
-class JDWPIntfShell:
-    pass
+class VMObj:
+    def __init__(self, vm):
+        self.vm = vm
 
-class JDWPObjShell:
+
+class RefrerenceType(VMObj):
+    def __init__(self, vm, referenceTypeID):
+        super().__init__(vm)
+        self.referenceTypeID = referenceTypeID
+        self.signature = None
+        self.refTypeTag = None
+        self.methods = {}
+        self.fields = {}
+
+        self._init_methods()
+        self._init_fields()
+
+    def _init_methods(self):
+        self.methods = {}
+        method_arr = self.vm.command('REF_Methods', refType=self.referenceTypeID)
+        for method_info in method_arr['declared_list']:
+            self.methods[method_info['name']] = method_info
+
+    def _init_fields(self):
+        self.fields = {}
+        field_arr = self.vm.command('REF_Fields', refType=self.referenceTypeID)
+        for field_info in field_arr['declared_list']:
+            self.fields[field_info['name']] = field_info
+
+
+class ClassType(RefrerenceType):
+    def __init__(self, vm, referenceTypeID):
+        super().__init__(vm, referenceTypeID)
+
     def __getattribute__(self, __name):
-        pass
+        try:
+            return super().__getattribute__(__name)
+        except AttributeError as e:
+            if __name in self.methods:
+                def _ref_method(thread_id, *arg):
+                    ret = self.vm.command('CLS_InvokeMethod',
+                                    clazz=self.referenceTypeID,
+                                    thread=thread_id,
+                                    methodID=self.methods[__name]['methodID'],
+                                    options=0,
+                                    arguments=len(arg),
+                                    arguments_list=arg)
+                    return ret['returnValue']
+                return _ref_method
+            raise e
 
-    def __setattr__(self, __name, __value):
-        pass
+
+    def __setattr__(self, __name: str, __value):
+        return super().__setattr__(__name, __value)
 
 
-class JDWPClassShell:
-
-    def __init__(self, jdwp, ref_info):
-        self.class_info = ref_info
-        self._methods = {}
-        self._field = {}
-        self._jdwp = jdwp
-
-    def new(self):
-        pass
+class ObjectReference(VMObj):
+    def __init__(self, vm):
+        super().__init__(vm)
 
 
-class JDWP:
+class JDWPVM:
     PLATFORM_ANDROID = 1
     HEADER_SIZE = 11
 
@@ -51,7 +92,7 @@ class JDWP:
         self.host = ""
         self.platform = platform
         self.id = 1
-        self.target_id = -1;
+        self.target_id = -1
         self.fieldIDSize = -1
         self.methodIDSize = -1
         self.objectIDSize = -1
@@ -60,7 +101,7 @@ class JDWP:
         self._classes = {}
 
     def connect(self, host="127.0.0.1", port=8700):
-        if self.platform == JDWP.PLATFORM_ANDROID:
+        if self.platform == JDWPVM.PLATFORM_ANDROID:
             subprocess.run(['adb', 'shell', 'am', 'set-debug-app',
                             '-w', package_name], stdout=subprocess.DEVNULL)
             subprocess.run(['adb', 'shell', 'monkey', '-p', package_name, '-c',
@@ -99,22 +140,22 @@ class JDWP:
     def set_break_at_method(self, method_sig):
         class_name, method_name = self._path_parse(method_sig)
         cls_info = self.get_class(class_name)
-        method_info = cls_info['methods'][method_name]
+        method_info = cls_info.methods[method_name]
 
         ret = self.command('EVT_Set',
-                     eventKind=EventKind.BREAKPOINT,
-                     suspendPolicy=SuspendPolicy.ALL,
-                     modifiers=1,
-                     modifiers_list=[
-                         dict(
-                             modKind=ModKind.LocationOnly,
-                             loc=(
-                                 TypeTag.CLASS, cls_info['typeID'], method_info['methodID'], 0)
-                         )
-                     ]
-                     )
+                           eventKind=EventKind.BREAKPOINT,
+                           suspendPolicy=SuspendPolicy.ALL,
+                           modifiers=1,
+                           modifiers_list=[
+                               dict(
+                                   modKind=ModKind.LocationOnly,
+                                   loc=(
+                                       TypeTag.CLASS, cls_info.referenceTypeID, method_info['methodID'], 0)
+                               )
+                           ]
+                           )
         requestID = ret['requestID']
-        info('Set break point at %s, requestID: %d'% (method_sig, requestID))
+        info('Set break point at %s, requestID: %d' % (method_sig, requestID))
         return requestID
 
     def _get_all_classes(self):
@@ -124,15 +165,7 @@ class JDWP:
 
     def get_class(self, name):
         ref_info = self._classes[name]
-        if 'methods' not in ref_info:
-            ref_info['methods'] = {}
-            method_arr = self.command(
-                'REF_Methods', refType=ref_info['typeID'])['declared_list']
-            for method_info in method_arr:
-                ref_info['methods'][method_info['name']] = method_info
-
-
-        return ref_info
+        return ClassType(self, ref_info['typeID'])
 
     def get_version(self):
         ret_data = self.command('VM_Version')
@@ -156,11 +189,11 @@ class JDWP:
             self.socket = s
 
     def _recv_cmd(self):
-        header = self.socket.recv(JDWP.HEADER_SIZE)
+        header = self.socket.recv(JDWPVM.HEADER_SIZE)
         pkt_len, id, flags, cmd_set, cmd = struct.unpack('>IIBBB', header)
 
         self.target_id = id
-        data_len = pkt_len - JDWP.HEADER_SIZE
+        data_len = pkt_len - JDWPVM.HEADER_SIZE
         cmd_sig = (cmd, cmd_set)
 
         data = b''
@@ -172,16 +205,15 @@ class JDWP:
 
     def _send_cmd_reply(self, target_id, errorcode, data):
         flags = COMM.REPLY_FLAG
-        pkt_len = len(data) + JDWP.HEADER_SIZE
+        pkt_len = len(data) + JDWPVM.HEADER_SIZE
         pkt_id = target_id
         pkt = struct.pack('>IIBH', pkt_len, pkt_id, flags, errorcode)
         self.socket.sendall(pkt+data)
 
-
     def _send_cmd(self, cmd_sig, data=b''):
         flags = COMM.CMD_FLAG
         cmd, cmd_set = cmd_sig
-        pkt_len = len(data) + JDWP.HEADER_SIZE
+        pkt_len = len(data) + JDWPVM.HEADER_SIZE
         pkt_id = self.id
         pkt = struct.pack(">IIBBB%ds" % len(data), pkt_len,
                           pkt_id, flags, cmd_set, cmd, data)
@@ -190,14 +222,14 @@ class JDWP:
         return pkt_id
 
     def _recv_cmd_reply(self, pkt_id):
-        header = self.socket.recv(JDWP.HEADER_SIZE)
+        header = self.socket.recv(JDWPVM.HEADER_SIZE)
         pkt_len, id, flags, errcode = struct.unpack('>IIBH', header)
         # TODO Error handling
         if errcode != 0:
-            raise Exception('Error! code:%d' %errcode)
+            raise Exception('Error! code:%d' % errcode)
         assert flags == COMM.REPLY_FLAG, "Reply Flag is not correct!"
         assert pkt_id == id, "Reply packet is not for sending"
-        data_len = pkt_len - JDWP.HEADER_SIZE
+        data_len = pkt_len - JDWPVM.HEADER_SIZE
 
         data = b''
         while len(data) < data_len:
@@ -303,18 +335,33 @@ class JDWP:
 
     def clear_event(self, event_kind, request_id):
         ret = self.command('EVT_Clear',
-            eventKind=event_kind,
-            requestID=request_id)
+                           eventKind=event_kind,
+                           requestID=request_id)
 
     def create_string(self, string):
         return self.command('VM_CreateString', utf=string)
     
+    def string_val(self, objID):
+        return self.command('STR_Value', stringObject=objID)
+
+
 class Event:
     def __init__(self, event_attr):
         self.eventKind = event_attr['eventKind']
         event_val = event_attr['eventKind_val']
         for k in event_val:
             self.__setattr__(k, event_val[k])
+
+def get_package_name(vm:JDWPVM, thread_id):
+    activity_thread = vm.get_class("Landroid/app/ActivityThread;")
+    context_warapper = vm.get_class("Landroid/content/ContextWrapper;")
+
+    ret = activity_thread.currentPackageName(thread_id)
+    ret_val = vm.string_val(ret[0])
+    info(ret)
+
+
+
 
 if __name__ == "__main__":
     package_name = ""
@@ -327,7 +374,7 @@ if __name__ == "__main__":
     #     "--break-on", "android.app.Activity.onResume",#"android.app.LoadedApk.makeApplication",
     #     "--loadlib", soname])
 
-    jdwp = JDWP()
+    jdwp = JDWPVM()
     jdwp.connect()
 
     runtime_class = jdwp.get_class("Ljava/lang/Runtime;")
@@ -337,9 +384,10 @@ if __name__ == "__main__":
     sus_policy, event_list = jdwp.wait_for_event()
     for event in event_list:
         if event.eventKind == EventKind.BREAKPOINT:
-            break
+            ret_val = runtime_class.getRuntime(event.thread)
+            get_package_name(jdwp, event.thread)
+            info(ret_val)
 
     jdwp.clear_event(EventKind.BREAKPOINT, request_id)
-
 
     info(ret)

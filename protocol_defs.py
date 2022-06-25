@@ -2,6 +2,11 @@ from re import S
 import struct
 
 
+class InvokeOptions:
+    INVOKE_SINGLE_THREADED = 0x01
+    INVOKE_NONVIRTUAL = 0x02
+
+
 class TypeTag:
     CLASS = 1
     INTERFACE = 2
@@ -227,9 +232,16 @@ cmd_def = {
     },
     'REF_Fields': {
         'sig': (4, 2),
-        'cmd': (),
-        'reply': (),
-
+        'cmd': (('referenceTypeID', 'refType'),),
+        'reply': (
+            ('int', 'declared'),
+            ('Repeated declared', (
+                ('fieldID', 'fieldID'),
+                ('string', 'name'),
+                ('string', 'signature'),
+                ('int', 'modBits'))
+             )
+        ),
     },
     'REF_Methods': {
         'sig': (5, 2),
@@ -338,8 +350,20 @@ cmd_def = {
     },
     'CLS_InvokeMethod': {
         'sig': (3, 3),
-        'cmd': (),
-        'reply': (),
+        'cmd': (
+            ('classID', 'clazz'),
+            ('threadID', 'thread'),
+            ('methodID', 'methodID'),
+            ('int', 'arguments'),
+            ('Repeated arguments', (
+                ('value', 'arg'),
+            )),
+            ('int', 'options'),
+        ),
+        'reply': (
+            ('value', 'returnValue'),
+            ('tagged-objectID', 'exception'),
+        ),
 
     },
     'CLS_NewInstance': {
@@ -452,8 +476,12 @@ cmd_def = {
     # StringReference Command Set (10)
     'STR_Value': {
         'sig': (1, 10),
-        'cmd': (),
-        'reply': (),
+        'cmd': (
+            ('objectID', 'stringObject'),
+        ),
+        'reply': (
+            ('string', 'stringValue'),
+        ),
 
     },
     # ThreadReference Command Set (11)
