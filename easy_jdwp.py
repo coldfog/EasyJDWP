@@ -68,7 +68,10 @@ class ClassType(RefrerenceType):
                                     options=0,
                                     arguments=len(arg),
                                     arguments_list=arg)
-                    return ret['returnValue']
+                    # TODO exception handling
+                    ret_exception = ret['exception']
+
+                    return self.vm.unbox_value(ret['returnValue'])
                 return _ref_method
             raise e
 
@@ -78,8 +81,9 @@ class ClassType(RefrerenceType):
 
 
 class ObjectReference(VMObj):
-    def __init__(self, vm):
+    def __init__(self, vm, objID):
         super().__init__(vm)
+        self.objectID = objID
 
 
 class JDWPVM:
@@ -99,6 +103,20 @@ class JDWPVM:
         self.referenceTypeIDSize = -1
         self.frameIDSize = -1
         self._classes = {}
+
+    def unbox_value(self, value):
+        data, tag = value
+        # primary type ret it self
+        if tag in ('byte', 'char', 'float', 'double', 'int', 'long', 'short', 'boolean'):
+            return data
+        elif tag == 'stringID': # string will auto deref itself
+            return self.string_val(data)
+        elif tag == 'objectID':
+            return ObjectReference(self, data)
+        elif tag == 'classObjectID':
+            return ClassType(self, data)
+        else:
+            return data, tag
 
     def connect(self, host="127.0.0.1", port=8700):
         if self.platform == JDWPVM.PLATFORM_ANDROID:
@@ -342,7 +360,7 @@ class JDWPVM:
         return self.command('VM_CreateString', utf=string)
     
     def string_val(self, objID):
-        return self.command('STR_Value', stringObject=objID)
+        return self.command('STR_Value', stringObject=objID)['stringValue']
 
 
 class Event:
@@ -352,13 +370,6 @@ class Event:
         for k in event_val:
             self.__setattr__(k, event_val[k])
 
-def get_package_name(vm:JDWPVM, thread_id):
-    activity_thread = vm.get_class("Landroid/app/ActivityThread;")
-    context_warapper = vm.get_class("Landroid/content/ContextWrapper;")
-
-    ret = activity_thread.currentPackageName(thread_id)
-    ret_val = vm.string_val(ret[0])
-    info(ret)
 
 
 
@@ -385,7 +396,9 @@ if __name__ == "__main__":
     for event in event_list:
         if event.eventKind == EventKind.BREAKPOINT:
             ret_val = runtime_class.getRuntime(event.thread)
-            get_package_name(jdwp, event.thread)
+            activity_thread = jdwp.get_class("Landroid/app/ActivityThread;")
+            pack_id = activity_thread.currentPackageName(event.thread)
+            info('pakid is %s' % pack_id)
             info(ret_val)
 
     jdwp.clear_event(EventKind.BREAKPOINT, request_id)
