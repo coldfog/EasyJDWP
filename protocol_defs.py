@@ -1,5 +1,6 @@
 from re import S
 import struct
+from typing import Any, Callable, Dict, Tuple
 
 
 class InvokeOptions:
@@ -216,7 +217,6 @@ cmd_def = {
         'sig': (1, 2),
         'cmd': (),
         'reply': (),
-
     },
     'REF_ClassLoader': {
         'sig': (2, 2),
@@ -289,9 +289,8 @@ cmd_def = {
     },
     'REF_ClassObject': {
         'sig': (11, 2),
-        'cmd': (),
-        'reply': (),
-
+        'cmd': (('referenceTypeID','refType'),),
+        'reply': (('classObjectID', 'classObject'),),
     },
     'REF_SourceDebugExtension': {
         'sig': (12, 2),
@@ -338,8 +337,8 @@ cmd_def = {
     # ClassType Command Set (3)
     'CLS_Superclass': {
         'sig': (1, 3),
-        'cmd': (),
-        'reply': (),
+        'cmd': (('classID','clazz'),),
+        'reply': (('classID','superclass'),),
 
     },
     'CLS_SetValues': {
@@ -421,9 +420,11 @@ cmd_def = {
     # ObjectReference Command Set (9)
     'OBJ_ReferenceType': {
         'sig': (1, 9),
-        'cmd': (),
-        'reply': (),
-
+        'cmd': (('objectID', 'object'),),
+        'reply': (
+            ('byte', 'refTypeTag'),
+            ('referenceTypeID', 'typeID')
+        ),
     },
     'OBJ_GetValues': {
         'sig': (2, 9),
@@ -445,8 +446,21 @@ cmd_def = {
     },
     'OBJ_InvokeMethod': {
         'sig': (6, 9),
-        'cmd': (),
-        'reply': (),
+        'cmd': (
+            ('objectID', 'object'),
+            ('threadID', 'thread'),
+            ('classID', 'clazz'),
+            ('methodID', 'methodID'),
+            ('int', 'arguments'),
+            ('Repeated arguments', (
+                ('value', 'arg'),
+            )),
+            ('int', 'options'),
+        ),
+        'reply': (
+            ('value', 'returnValue'),
+            ('tagged-objectID', 'exception'),
+        ),
 
     },
     'OBJ_DisableCollection': {
@@ -717,7 +731,6 @@ cmd_def = {
         'sig': (1, 17),
         'cmd': (),
         'reply': (),
-
     },
     # Event Command Set (64)
     'EVTSET_Composite': {
@@ -881,7 +894,10 @@ pack_defs = {
 }
 
 
-def init_IDSIze(size_dict):
+DataDictType = Dict[str, Any]
+
+
+def init_IDSIze(size_dict: DataDictType):
     global objectIDSize
     global referenceTypeIDSize
     global frameIDSize
@@ -981,7 +997,7 @@ def init_IDSIze(size_dict):
     pack_defs = _pack_defs
 
 
-def _pack_id_func(size, is_pack, tagged=False):
+def _pack_id_func(size: int, is_pack: bool, tagged: bool = False) -> Callable:
     format_pattern = ""
     tagged_pattern = "c" if tagged else ""
     if size == 4:
@@ -1003,7 +1019,7 @@ def _pack_id_func(size, is_pack, tagged=False):
         return lambda data: (struct.unpack(format_pattern, data[:size]), size)
 
 
-def _pack_location(is_pack):
+def _pack_location(is_pack: bool) -> Callable:
     global referenceTypeIDSize
     global methodIDSize
 
@@ -1018,28 +1034,28 @@ def _pack_location(is_pack):
         return lambda data: (struct.unpack(format_pattern, data[:size]), size)
 
 
-def _pack_string(data):
+def _pack_string(data: str) -> Tuple[bytes, int]:
     length = len(data)
-    return struct.pack('>I%ss' % length, length, data), 4+length
+    return struct.pack('>I%ss' % length, length, data.encode('utf-8')), 4+length
 
 
-def _unpack_string(data):
+def _unpack_string(data: bytes) -> Tuple[str, int]:
     length = struct.unpack(">I", data[:4])[0]
     content = struct.unpack(">%ss" % length, data[4:4+length])[0]
     return content.decode('utf-8'), 4+length
 
 
-def _pack_value(data):
-    tag = tag_def[data[0]]
+def _pack_value(data:Tuple[Any, str]) -> Tuple[bytes, int]:
+    data, tag = data
     if tag == 'None':
-        return (data[0], 1)
+        return tag_def[tag], 1
     else:
-        out_data, size = pack_defs[tag]['pack'](data[1:])
-        return data[0] + out_data, size+1
+        out_data, size = pack_defs[tag]['pack'](data)
+        return tag_def[tag] + out_data, size+1
 
 
-def _unpack_value(data):
-    tag = tag_def[data[0]]
+def _unpack_value(data: bytes) -> Tuple[Any, int]:
+    tag = tag_lbl[data[0]]
     if tag == 'None':
         return (None, 1)
     else:
@@ -1047,7 +1063,7 @@ def _unpack_value(data):
         return data+(tag,), size+1
 
 
-tag_def = {
+tag_lbl = {
     91: 'arrayID',  # ARRAY	'[' - an array object (objectID size).  
     66: 'byte',  # BYTE	'B' - a byte value (1 byte).  
     67: 'char',  # CHAR	'C' - a character value (2 bytes).  
@@ -1068,3 +1084,6 @@ tag_def = {
     # CLASS_OBJECT	'c' - a class object object (objectID size).
     99: 'classObjectID',
 }
+
+
+tag_def = {value:struct.pack('>B', key) for key, value in tag_lbl.items()}
