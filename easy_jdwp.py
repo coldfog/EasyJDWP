@@ -1,3 +1,4 @@
+from optparse import Option
 import re
 import socket
 import struct
@@ -77,7 +78,7 @@ class JDWPVM:
     def unbox_value(self, value: Tuple[Any, str]) -> Any:
         data, tag = value
         # primary type ret it self
-        if tag in ('byte', 'char', 'float', 'double', 'int', 'long', 'short', 'boolean'):
+        if tag in ('byte', 'char', 'float', 'double', 'int', 'long', 'short', 'boolean', 'None'):
             return data
         elif tag == 'stringID':  # string will auto deref itself
             return self.string_val(data)
@@ -121,80 +122,16 @@ class JDWPVM:
         self.get_version()
         self._get_all_classes()
 
-    def _sig_parse(self, s: str) -> list:
-        matched = re.match(r"\((?P<param>.*)\)(?P<ret>.*)", s)
-        ret_val_str = matched.group('ret')
-        params_str = matched.group("param")
-        params = re.findall(
-            r"(?P<param>\[?[BCDFISJZV]|\[?L[\w/]+;)", params_str)
-
-        return params, ret_val_str
-
-    def javasig_to_pysig(self, str):
-        param, ret = self._sig_parse(str)
-        return self._sig_to_pysig(param)
-
-    def _sig_to_pysig(self, param):
-        type_table = dict(
-            B='int',
-            C='int',
-            D='float',
-            F='float',
-            I='int',
-            S='int',
-            J='int',
-            Z='bool',
-            V='NoneType'
-        )
-
-        def __convert(val: str):
-            prefix = ""
-            if val[0] == '[':
-                prefix = "list_"
-                val = val[1:]
-
-            if val[0] == 'L':
-                if val.endswith('String;'):
-                    return prefix + 'str'
-                else:
-                    return prefix + 'objectID'
-            return prefix + type_table[val]
-
-        pysig = ','.join([__convert(i) for i in param])
-        return pysig
-
-    def type_to_pysig(self, param):
-        def __convert(obj):
-            prefix = ""
-            if isinstance(obj, list):
-                prefix = 'list_'
-                obj = obj[0]
-            
-            type_name = obj.__class__.__name__
-            if type_name in ('int', 'float', 'bool', 'NoneType', 'str'):
-                return prefix+type_name
-            else:
-                return prefix+'objectID'
-
-        pysig = ','.join([__convert(i) for i in param])# + '|' + __convert(ret_val)
-        return pysig
-
-
     def _path_parse(self, s: str) -> Tuple[str, str]:
         i = s.rfind('.')
         if i == -1:
             raise Exception('Cannot parse path')
         return 'L' + s[:i].replace('.', '/') + ';', s[i:][1:]
 
-    def set_break_at_method(self, method_sig: str, methodsig:str=None) -> int:
-        class_name, method_name = self._path_parse(method_sig)
+    def set_break_at_method(self, method_name: str, methodsig: str = None) -> int:
+        class_name, method_name = self._path_parse(method_name)
         cls_info = self.get_class(class_name)
         method_info = cls_info.get_methodInfo(method_name)
-
-        if methodsig:
-            pysig = self.javasig_to_pysig(methodsig)
-        else:
-            pysig = ''
 
         ret = self.command('EVT_Set',
                            eventKind=EventKind.BREAKPOINT,
@@ -204,12 +141,12 @@ class JDWPVM:
                                dict(
                                    modKind=ModKind.LocationOnly,
                                    loc=(
-                                       TypeTag.CLASS, cls_info.referenceTypeID, method_info[pysig]['methodID'], 0)
+                                       TypeTag.CLASS, cls_info.referenceTypeID, method_info.get_methodID(methodsig), 0)
                                )
                            ]
                            )
         requestID = ret['requestID']
-        info('Set break point at %s, requestID: %d' % (method_sig, requestID))
+        info('Set break point at %s, requestID: %d' % (method_name, requestID))
         return requestID
 
     def _get_all_classes(self) -> None:
@@ -353,8 +290,6 @@ class JDWPVM:
         return data_dict, index
 
     def command(self, cmd_name: str, **kwargs) -> Dict[str, Any]:
-        if cmd_name == 'OBJ_InvokeMethod':
-            sleep(1)
         cmd = cmd_def[cmd_name]
         data, _ = self._pack_data(cmd['cmd'], kwargs)
         pack_id = self._send_cmd(cmd['sig'], data)
@@ -461,10 +396,9 @@ class RefrerenceType(VMObj):
             'REF_Methods', refType=self.referenceTypeID)
         for method_info in method_arr['declared_list']:
             name = method_info['name']
-            pysig = self.vm.javasig_to_pysig(method_info['signature'])
             if name not in self.methods:
-                self.methods[name] = {}
-            self.methods[name][pysig] = method_info
+                self.methods[name] = Method(self.vm, self)
+            self.methods[name].add_sig(method_info)
 
     def _init_fields(self) -> None:
         self.fields = {}
@@ -495,7 +429,7 @@ class ClassType(RefrerenceType):
         else:
             self.superClass = None
 
-    def get_methodInfo(self, name: str) -> Optional[int]:
+    def get_methodInfo(self, name: str) -> "Method":
         cur_clz = self
         while cur_clz != None:
             if name in cur_clz.methods:
@@ -506,21 +440,10 @@ class ClassType(RefrerenceType):
         try:
             return super().__getattribute__(__name)
         except AttributeError as e:
-            methodsig_dict = self.get_methodInfo(__name)
-            if methodsig_dict:
-                def _ref_method(thread_id, *arg):
-                    pysig = self.vm.type_to_pysig(arg)
-                    ret = self.vm.command('CLS_InvokeMethod',
-                                          clazz=self.referenceTypeID,
-                                          thread=thread_id,
-                                          methodID=methodsig_dict[pysig]['methodID'],
-                                          options=0,
-                                          arguments=len(arg),
-                                          arguments_list=arg)
-                    # TODO exception handling
-                    ret_exception = ret['exception']
-
-                    return self.vm.unbox_value(ret['returnValue'])
+            method = self.get_methodInfo(__name)
+            if method:
+                def _ref_method(thread_id, *arg, sig=None):
+                    return method.invoke(thread_id, *arg, sig=sig, calling_obj=None)
                 return _ref_method
             raise e
 
@@ -562,22 +485,10 @@ class ObjectReference(VMObj):
         try:
             return super().__getattribute__(__name)
         except AttributeError as e:
-            methods_dict = self.referenceType.get_methodInfo(__name)
-            if methods_dict:
-                def _ref_method(thread_id, *arg):
-                    pysig = self.vm.type_to_pysig(arg)
-                    ret = self.vm.command('OBJ_InvokeMethod',
-                                          object=self.objectID,
-                                          thread=thread_id,
-                                          clazz=self.referenceType.referenceTypeID,
-                                          methodID=methods_dict[pysig]['methodID'],
-                                          options=0,
-                                          arguments=len(arg),
-                                          arguments_list=[{'arg': self.vm.box_value(i)} for i in arg])
-                    # TODO exception handling
-                    ret_exception = ret['exception']
-
-                    return self.vm.unbox_value(ret['returnValue'])
+            method = self.referenceType.get_methodInfo(__name)
+            if method:
+                def _ref_method(thread_id, *arg, sig=None):
+                    return method.invoke(thread_id, *arg, sig=sig, calling_obj=self)
                 return _ref_method
             raise e
 
@@ -590,8 +501,163 @@ class StringReference(ObjectReference):
         return self.vm.string_val(self.objectID)
 
 
+class Method(VMObj):
+    def __init__(self, vm: JDWPVM, refType: RefrerenceType) -> None:
+        super().__init__(vm)
+        self.methodIDs = {}
+        self.refType = refType
+
+    def add_sig(self, info: dict) -> None:
+        sig = info['signature']
+        pysig = self.javasig_to_pysig(sig)
+
+        if pysig not in self.methodIDs:
+            self.methodIDs[pysig] = []
+        self.methodIDs[pysig].append((sig, info['methodID'], info['modBits']))
+
+    def _sig_parse(self, s: str) -> list:
+        matched = re.match(r"\((?P<param>.*)\)(?P<ret>.*)", s)
+        ret_val_str = matched.group('ret')
+        params_str = matched.group("param")
+        params = re.findall(
+            r"(?P<param>\[?[BCDFISJZV]|\[?L[\w/]+;)", params_str)
+
+        return params, ret_val_str
+
+    def javasig_to_pysig(self, str: str) -> str:
+        param, ret = self._sig_parse(str)
+        return self._sig_to_pysig(param)
+
+    def _sig_to_pysig(self, param: list) -> str:
+        type_table = dict(B='int', C='int', D='float',
+                          F='float', I='int', S='int',
+                          J='int', Z='bool', V='NoneType')
+
+        def __convert(val: str):
+            prefix = ""
+            if val[0] == '[':
+                prefix = "list_"
+                val = val[1:]
+
+            if val[0] == 'L':
+                # if val.endswith('String;'):
+                #     return prefix + 'str'
+                # else:
+                return prefix + 'objectID'
+            return prefix + type_table[val]
+
+        pysig = ','.join([__convert(i) for i in param])
+        return pysig
+
+    def arg_to_pysig(self, arg_list: list) -> str:
+        def __convert(obj):
+            prefix = ""
+            if isinstance(obj, list):
+                prefix = 'list_'
+                obj = obj[0]
+
+            type_name = obj.__class__.__name__
+            if type_name in ('int', 'float', 'bool', 'NoneType'):#, 'str'):
+                return prefix+type_name
+            else:
+                return prefix+'objectID'
+
+        # + '|' + __convert(ret_val)
+        pysig = ','.join([__convert(i) for i in arg_list])
+        return pysig
+
+    def get_methodID(self, sig: str=None, arg_list:list=[]) -> int:
+
+        if sig is None:
+            # if we only have arg_list
+            target_pysig = self.arg_to_pysig(arg_list)
+            method_info = self.methodIDs[target_pysig]
+
+            if len(method_info) == 1:
+                # only one sig, this will not lead to an ambiguous case, return match methodID
+                return method_info[0][1]
+            else:
+                # otherwise, must have explicit sig
+                raise Exception("ambiguous arg list, must have explicit sig")
+        else:
+            target_pysig = self.javasig_to_pysig(sig)
+
+            method_info = self.methodIDs[target_pysig]
+            target_methodID = 0
+            # we cannt determine which method to invoke by python arg list
+            # must have sig
+            for javasig, methodID, modbits in method_info:
+                if javasig == sig:
+                    target_methodID = methodID
+
+            if target_methodID == 0:
+                raise Exception(
+                    "Arg list is not match siganature! args: %s, sig: %s" % (repr(arg_list), sig))
+            return target_methodID
+
+    def invoke(self, thread_id, *arg_list, sig: str, calling_obj: Optional[ObjectReference]) -> Any:
+        """Invoke this method. static method, object method
+
+        Args:
+            method_name (str): the name of this method
+            sig (str, optional): the jni signature of this method. Defaults to ''.
+            calling_obj (str, optional): the object which calling this method. It is None when method is static. Defaults to None.
+        """
+        # get correct method
+        target_methodID = self.get_methodID(sig, arg_list)
+
+        # pysig_arg = self.arg_to_pysig(arg_list)
+        # pysig_java = self.javasig_to_pysig(sig)
+
+        # assert pysig_arg == pysig_java, "Arg list is not match siganature! args: %s, sig: %s" % (
+        #     repr(arg_list), sig)
+
+        # pack arg
+        arguments_list = [{'arg': self.vm.box_value(i)} for i in arg_list]
+
+        # set and invoke
+        if calling_obj is not None:
+            ret = self.vm.command('OBJ_InvokeMethod',
+                                  object=calling_obj.objectID,
+                                  thread=thread_id,
+                                  clazz=self.refType.referenceTypeID,
+                                  methodID=target_methodID,
+                                  options=0,
+                                  arguments=len(arguments_list),
+                                  arguments_list=arguments_list)
+        elif isinstance(self.refType, ClassType):
+            ret = self.vm.command('CLS_InvokeMethod',
+                                  clazz=self.refType.referenceTypeID,
+                                  thread=thread_id,
+                                  methodID=target_methodID,
+                                  options=0,
+                                  arguments=len(arguments_list),
+                                  arguments_list=arguments_list)
+        elif isinstance(self.refType, InterfaceType):
+            ret = self.vm.command('INTF_InvokeMethod',
+                                  clazz=self.refType.referenceTypeID,
+                                  thread=thread_id,
+                                  methodID=target_methodID,
+                                  options=0,
+                                  arguments=len(arguments_list),
+                                  arguments_list=arguments_list)
+        else:
+            raise Exception("Unsupported reference Type")
+
+        # TODO exception handling
+        ret_exception = ret['exception']
+        if ret_exception != (b'L', 0):
+            raise InvokeException(self.vm, ret_exception[1], "JDWP invoke raise exception")
+
+        return self.vm.unbox_value(ret['returnValue'])
+
+class InvokeException(Exception):
+    def __init__(self, vm, objectID, *args: object) -> None:
+        super().__init__(*args)
+        self.exception = ObjectReference(vm, objectID)
+
 if __name__ == "__main__":
-    package_name = ""
+    package_name = "com.xxx.xxx"
     host = "127.0.0.1"
     jdwp_port = "8888"
 
@@ -604,7 +670,7 @@ if __name__ == "__main__":
     jdwp = JDWPVM()
     jdwp.connect()
 
-    request_id = jdwp.set_break_at_method("android.app.Activity.onResume")
+    request_id = jdwp.set_break_at_method("android.app.LoadedApk.makeApplication", methodsig='(ZLandroid/app/Instrumentation;)Landroid/app/Application;')
     #request_id = jdwp.set_break_at_method("android.app.Activity.onPause")
     jdwp.vm_resume()
 
@@ -616,16 +682,26 @@ if __name__ == "__main__":
 
     def exec_cmd(event):
         jdwp.clear_event(EventKind.BREAKPOINT, event.requestID)
-        cmd = " "
+        cmd = "ls"
         runtime_class = jdwp.get_class("Ljava/lang/Runtime;")
         runtimeInst = runtime_class.getRuntime(event.thread)
         ret = runtimeInst.equals(event.thread, cmd)
-        ret = runtimeInst.exec(event.thread, cmd)
-        ret = runtimeInst.freeMemory(event.thread, cmd)
+        proccess_obj = runtimeInst.exec(event.thread, cmd)
+        stream_obj = proccess_obj.getOutputStream(event.thread)
+        ret = runtimeInst.freeMemory(event.thread)
+        try:
+            runtimeInst.load(event.thread, "/data/data/com.xxx.xxx/lib/libUE4.so")
+        except InvokeException as e:
+            e = e.exception
+            info(e.getMessage(event.thread))
+            info(e.getLocalizedMessage(event.thread))
+            info(e.toString(event.thread))
+            info(e.printStackTrace(event.thread))
+            info("Yeah")
         return False
 
     #jdwp.register_for_event(EventKind.BREAKPOINT, _break_remove)
-    jdwp.register_for_event(EventKind.BREAKPOINT, exec_cmd)
+    jdwp.register_for_event(EventKind.BREAKPOINT, exec_cmd, )
 
     while True:
         sus_policy, event_list = jdwp.wait_for_event()

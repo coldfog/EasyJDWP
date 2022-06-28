@@ -381,9 +381,20 @@ cmd_def = {
     # InterfaceType Command Set (5)
     'INTF_InvokeMethod': {
         'sig': (1, 5),
-        'cmd': (),
-        'reply': (),
-
+        'cmd': (
+            ('interfaceID', 'clazz'),
+            ('threadID', 'thread'),
+            ('methodID', 'methodID'),
+            ('int', 'arguments'),
+            ('Repeated arguments', (
+                ('value', 'arg'),
+            )),
+            ('int', 'options'),
+        ),
+        'reply': (
+            ('value', 'returnValue'),
+            ('tagged-objectID', 'exception'),
+        ),
     },
     # Method Command Set (6)
     'MTHD_LineTable': {
@@ -1057,7 +1068,7 @@ def _pack_value(data:Tuple[Any, str]) -> Tuple[bytes, int]:
 def _unpack_value(data: bytes) -> Tuple[Any, int]:
     tag = tag_lbl[data[0]]
     if tag == 'None':
-        return (None, 1)
+        return (None, tag), 1
     else:
         data, size = pack_defs[tag]['unpack'](data[1:])
         return data+(tag,), size+1
